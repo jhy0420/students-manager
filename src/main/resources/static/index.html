@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>학생 관리</title>
+    <style>
+        body { font-family: sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+        h1 { margin-bottom: 1rem; }
+        form { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        input { padding: .5rem; border: 1px solid #bbb; border-radius: 4px; }
+        input[name=name] { flex: 2; min-width: 120px; }
+        input[name=age], input[name=className] { flex: 1; min-width: 80px; }
+        button { padding: .5rem .9rem; border: 0; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; }
+        button.secondary { background: #6b7280; }
+        button.danger { background: #dc2626; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: .5rem; border-bottom: 1px solid #ddd; text-align: left; }
+        td.actions { display: flex; gap: .4rem; }
+        #message { min-height: 1.4rem; margin-bottom: .5rem; color: #dc2626; }
+        .empty { color: #777; text-align: center; }
+    </style>
+</head>
+<body>
+<h1>학생 관리</h1>
+<div id="message" role="alert"></div>
+
+<form id="student-form">
+    <input name="name" placeholder="이름" required>
+    <input name="age" type="number" min="1" max="150" placeholder="나이" required>
+    <input name="className" placeholder="반" required>
+    <button type="submit" id="submit-btn">추가</button>
+    <button type="button" id="cancel-btn" class="secondary" hidden>취소</button>
+</form>
+
+<table>
+    <thead>
+    <tr><th>ID</th><th>이름</th><th>나이</th><th>반</th><th></th></tr>
+    </thead>
+    <tbody id="student-list"></tbody>
+</table>
+
+<script>
+    const API = '/api/students';
+    const form = document.getElementById('student-form');
+    const list = document.getElementById('student-list');
+    const message = document.getElementById('message');
+    const submitBtn = document.getElementById('submit-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    let editingId = null;
+
+    async function request(url, options) {
+        const res = await fetch(url, options);
+        if (!res.ok) {
+            let detail = '요청에 실패했습니다.';
+            try {
+                const problem = await res.json();
+                detail = problem.detail || problem.title || detail;
+            } catch (e) { /* ignore non-JSON body */ }
+            throw new Error(detail);
+        }
+        return res.status === 204 ? null : res.json();
+    }
+
+    function showError(err) {
+        message.textContent = err.message;
+    }
+
+    function cell(text) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        return td;
+    }
+
+    function render(students) {
+        list.replaceChildren();
+        if (students.length === 0) {
+            const tr = document.createElement('tr');
+            const td = cell('등록된 학생이 없습니다.');
+            td.colSpan = 5;
+            td.className = 'empty';
+            tr.append(td);
+            list.append(tr);
+            return;
+        }
+        for (const s of students) {
+            const tr = document.createElement('tr');
+            const actions = document.createElement('td');
+            actions.className = 'actions';
+
+            const edit = document.createElement('button');
+            edit.textContent = '수정';
+            edit.className = 'secondary';
+            edit.addEventListener('click', () => startEdit(s));
+
+            const del = document.createElement('button');
+            del.textContent = '삭제';
+            del.className = 'danger';
+            del.addEventListener('click', () => remove(s));
+
+            actions.append(edit, del);
+            tr.append(cell(s.id), cell(s.name), cell(s.age), cell(s.className), actions);
+            list.append(tr);
+        }
+    }
+
+    async function load() {
+        try {
+            render(await request(API));
+        } catch (err) {
+            showError(err);
+        }
+    }
+
+    function resetForm() {
+        editingId = null;
+        form.reset();
+        submitBtn.textContent = '추가';
+        cancelBtn.hidden = true;
+    }
+
+    function startEdit(student) {
+        editingId = student.id;
+        form.name.value = student.name;
+        form.age.value = student.age;
+        form.className.value = student.className;
+        submitBtn.textContent = '저장';
+        cancelBtn.hidden = false;
+        form.name.focus();
+    }
+
+    async function remove(student) {
+        if (!confirm(student.name + ' 학생을 삭제할까요?')) return;
+        try {
+            await request(API + '/' + student.id, {method: 'DELETE'});
+            message.textContent = '';
+            if (editingId === student.id) resetForm();
+            await load();
+        } catch (err) {
+            showError(err);
+        }
+    }
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const body = JSON.stringify({
+            name: form.name.value,
+            age: Number(form.age.value),
+            className: form.className.value
+        });
+        const editing = editingId !== null;
+        try {
+            await request(editing ? API + '/' + editingId : API, {
+                method: editing ? 'PUT' : 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body
+            });
+            message.textContent = '';
+            resetForm();
+            await load();
+        } catch (err) {
+            showError(err);
+        }
+    });
+
+    cancelBtn.addEventListener('click', resetForm);
+    load();
+</script>
+</body>
+</html>
